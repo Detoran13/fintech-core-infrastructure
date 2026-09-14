@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: loki-data-pvc
+  namespace: fintech-monitoring
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: longhorn-database-sc
+  resources:
+    requests:
+      storage: 5Gi
+      

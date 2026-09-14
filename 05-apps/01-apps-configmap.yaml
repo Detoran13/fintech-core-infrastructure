@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fintech-apps-config
+  namespace: fintech-apps
+data:
+  DB_HOST: "fintech-db-rw.fintech-databases.svc.cluster.local"
+  DB_PORT: "5432"
+  DB_NAME: "fintech_prod"
+
+  KAFKA_BOOTSTRAP_SERVERS: "fintech-kafka-kafka-bootstrap.fintech-messaging.svc.cluster.local:9092"
+
+  KAFKA_TOPIC: "fintech-transactions"
+  

@@ -1,0 +1,150 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: producer-source
+  namespace: fintech-apps
+data:
+  producer.py: | 
+    import json
+    import os
+    import time
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    from kafka import KafkaProducer
+
+    KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP_SERVERS")
+    TOPIC = os.environ.get("KAFKA_TOPIC")
+
+    print(f"Connecting to Kafka at {KAFKA_BOOTSTRAP}...", flush=True)
+    producer = None
+    while not producer:
+        try:
+            producer = KafkaProducer(
+                bootstrap_servers=KAFKA_BOOTSTRAP,
+                value_serializer=lambda v: json.dumps(v).encode('utf-8')
+            )
+            print("Successfully connected to Kafka!", flush=True)
+        except Exception as e:
+            print(f"Waiting for Kafka: {e}", flush=True)
+            time.sleep(2)
+
+    class TransactionHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == '/healthz':
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"OK")
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def do_POST(self):
+            if self.path == '/transfer':
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                try:
+                    payload = json.loads(post_data.decode('utf-8'))
+                    future = producer.send(TOPIC, payload)
+                    future.get(timeout=10)
+                    
+                    self.send_response(202) # Accepted
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    response = {"status": "QUEUED", "message": "Transaction sent to Kafka"}
+                    self.wfile.write(json.dumps(response).encode('utf-8'))
+                    print(f"Sent to Kafka: {payload}", flush=True)
+                except Exception as e:
+                    self.send_response(500)
+                    self.end_headers()
+                    self.wfile.write(str(e).encode('utf-8'))
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+    server = HTTPServer(('0.0.0.0', 8080), TransactionHandler)
+    print("Producer HTTP Server started on port 8080", flush=True)
+    server.serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fintech-producer
+  namespace: fintech-apps
+  labels:
+    app: fintech-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fintech-producer
+  template:
+    metadata:
+      labels:
+        app: fintech-producer
+    spec:
+      containers:
+      - name: api
+        image: python:3.11-slim
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            pip install --no-cache-dir kafka-python-ng && \
+            python /app/producer.py
+        ports:
+          - containerPort: 8080
+            name: http
+        
+        env:
+          - name: KAFKA_BOOTSTRAP_SERVERS
+            valueFrom:
+              configMapKeyRef:
+                name: fintech-apps-config
+                key: KAFKA_BOOTSTRAP_SERVERS
+          - name: KAFKA_TOPIC
+            valueFrom:
+              configMapKeyRef:
+                name: fintech-apps-config
+                key: KAFKA_TOPIC
+
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 15
+
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+
+        volumeMounts:
+          - name: code
+            mountPath: /app
+      
+      volumes:
+        - name: code
+          configMap:
+            name: producer-source
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fintech-producer
+  namespace: fintech-apps
+spec:
+  selector:
+    app: fintech-producer
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP
+  

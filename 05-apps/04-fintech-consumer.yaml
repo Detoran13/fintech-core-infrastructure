@@ -1,0 +1,205 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: consumer-source
+  namespace: fintech-apps
+data:
+  consumer.py: |
+    import json
+    import os
+    import time
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    from kafka import KafkaConsumer
+    import psycopg2
+
+    KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP_SERVERS")
+    TOPIC = os.environ.get("KAFKA_TOPIC")
+    DB_HOST = os.environ.get("DB_HOST")
+    DB_PORT = os.environ.get("DB_PORT")
+    DB_NAME = os.environ.get("DB_NAME")
+    DB_USER = os.environ.get("DB_USER")
+    DB_PASSWORD = os.environ.get("DB_PASSWORD")
+
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == '/healthz':
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"OK")
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+    def run_health_server():
+        httpd = HTTPServer(('0.0.0.0', 8081), HealthHandler)
+        httpd.serve_forever()
+
+    threading.Thread(target=run_health_server, daemon=True).start()
+    print("Health check server started on port 8081", flush=True)
+
+    def get_db_connection():
+        while True:
+            try:
+                print(f"Connecting to PostgreSQL at {DB_HOST}:{DB_PORT}...", flush=True)
+                c = psycopg2.connect(
+                    host=DB_HOST,
+                    port=DB_PORT,
+                    dbname=DB_NAME,
+                    user=DB_USER,
+                    password=DB_PASSWORD,
+                    connect_timeout=5
+                )
+                c.autocommit = True
+                print("Successfully connected to PostgreSQL!", flush=True)
+                return c
+            except Exception as e:
+                print(f"Waiting for DB: {e}", flush=True)
+                time.sleep(2)
+
+    conn = get_db_connection()
+
+    consumer = None
+    while not consumer:
+        try:
+            print(f"Connecting to Kafka at {KAFKA_BOOTSTRAP}...", flush=True)
+            consumer = KafkaConsumer(
+                TOPIC,
+                bootstrap_servers=KAFKA_BOOTSTRAP,
+                group_id="fintech-tx-workers",
+                auto_offset_reset='earliest',
+                enable_auto_commit=True,
+                value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+            )
+            print(f"Successfully subscribed to Kafka topic: {TOPIC}!", flush=True)
+        except Exception as e:
+            print(f"Waiting for Kafka: {e}", flush=True)
+            time.sleep(2)
+
+    print("Consumer worker is running and waiting for transactions...", flush=True)
+
+    for message in consumer:
+        tx = message.value
+        try:
+            if conn.closed:
+                conn = get_db_connection()
+
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO transactions
+                    (transaction_id, from_account, to_account, amount, currency, status)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (transaction_id) DO NOTHING;
+                """, (
+                    tx.get("transaction_id"),
+                    tx.get("from_account"),
+                    tx.get("to_account"),
+                    tx.get("amount"),
+                    tx.get("currency", "USD"),
+                    tx.get("status", "PROCESSED")
+                ))
+            print(f"[DB INSERT SUCCESS] Processed Tx: {tx.get('transaction_id')} | Amount: {tx.get('amount')}", flush=True)
+        except Exception as err:
+            print(f"[DB ERROR] Failed to process {tx}: {err}", flush=True)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = get_db_connection()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fintech-consumer
+  namespace: fintech-apps
+  labels:
+    app: fintech-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fintech-consumer
+  template:
+    metadata:
+      labels:
+        app: fintech-consumer
+    spec:
+      containers:
+      - name: worker
+        image: python:3.11-slim
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            pip install --no-cache-dir kafka-python-ng psycopg2-binary && \
+            python /app/consumer.py
+        ports:
+          - containerPort: 8081
+            name: health
+
+        env:
+          - name: KAFKA_BOOTSTRAP_SERVERS
+            valueFrom:
+              configMapKeyRef:
+                name: fintech-apps-config
+                key: KAFKA_BOOTSTRAP_SERVERS
+          - name: KAFKA_TOPIC
+            valueFrom:
+              configMapKeyRef:
+                name: fintech-apps-config
+                key: KAFKA_TOPIC
+          - name: DB_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: fintech-apps-config
+                key: DB_HOST
+          - name: DB_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: fintech-apps-config
+                key: DB_PORT
+          - name: DB_NAME
+            valueFrom:
+              configMapKeyRef:
+                name: fintech-apps-config
+                key: DB_NAME
+          - name: DB_USER
+            valueFrom:
+              secretKeyRef:
+                name: fintech-db-secret
+                key: db-user
+          - name: DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: fintech-db-secret
+                key: db-password
+
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 20
+          periodSeconds: 15
+
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+
+        volumeMounts:
+          - name: code
+            mountPath: /app
+
+      volumes:
+        - name: code
+          configMap:
+            name: consumer-source
+            

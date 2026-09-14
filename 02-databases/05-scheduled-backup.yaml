@@ -1,0 +1,12 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: fintech-db-daily-backup
+  namespace: fintech-databases
+spec:
+  cluster:
+    name: fintech-db
+  schedule: "0 0 2 * * *"
+  immediate: true
+  method: barmanObjectStore
+  backupOwnerReference: self

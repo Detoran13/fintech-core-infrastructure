@@ -1,0 +1,76 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: fintech-db-cleaner
+  namespace: fintech-apps
+spec:
+  schedule: "*/15 * * * *"
+  
+  concurrencyPolicy: Forbid
+  
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: fintech-db-cleaner
+        spec:
+          restartPolicy: OnFailure 
+          
+          containers:
+          - name: cleaner
+            image: ghcr.io/cloudnative-pg/postgresql:16.4
+            
+            resources:
+              limits:
+                cpu: 100m
+                memory: 128Mi
+              requests:
+                cpu: 50m
+                memory: 64Mi
+
+            env:
+              - name: PGHOST
+                valueFrom:
+                  configMapKeyRef:
+                    name: fintech-apps-config
+                    key: DB_HOST
+              - name: PGPORT
+                valueFrom:
+                  configMapKeyRef:
+                    name: fintech-apps-config
+                    key: DB_PORT
+              - name: PGDATABASE
+                valueFrom:
+                  configMapKeyRef:
+                    name: fintech-apps-config
+                    key: DB_NAME
+              - name: PGUSER
+                valueFrom:
+                  secretKeyRef:
+                    name: fintech-db-secret
+                    key: db-user
+              - name: PGPASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: fintech-db-secret
+                    key: db-password
+
+            command: ["/bin/bash", "-c"]
+            args:
+              - |
+                echo "[CLEANER START] Running automated data retention cleanup..."
+                
+                DELETED_ROWS=$(psql -v ON_ERROR_STOP=1 -t -A -c "
+                  WITH deleted AS (
+                    DELETE FROM transactions 
+                    WHERE created_at < NOW() - INTERVAL '30 minutes' 
+                    RETURNING *
+                  ) SELECT count(*) FROM deleted;
+                ")
+                
+                echo "[CLEANER SUCCESS] Purged $DELETED_ROWS old transaction rows from database."
+                

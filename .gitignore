@@ -1,0 +1,11 @@
+# Master Private Keys & Certificates (DO NOT COMMIT)
+*.pem
+*.key
+*master-key*
+*.crt
+.DS_Store
+*.swp
+*.tmp
+*~
+.env
+.env.*

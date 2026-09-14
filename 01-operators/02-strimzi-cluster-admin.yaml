@@ -1,0 +1,31 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: strimzi-super-operator-role
+rules:
+  - apiGroups: ["kafka.strimzi.io", "core.strimzi.io"]
+    resources: ["*"]
+    verbs: ["*"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints", "configmaps", "secrets", "nodes", "namespaces", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["*"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: strimzi-super-operator-binding
+subjects:
+- kind: ServiceAccount
+  name: strimzi-cluster-operator
+  namespace: strimzi-operator
+roleRef:
+  kind: ClusterRole
+  name: strimzi-super-operator-role
+  apiGroup: rbac.authorization.k8s.io
+  

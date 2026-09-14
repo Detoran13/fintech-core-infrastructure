@@ -1,0 +1,49 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: fintech-db
+  namespace: fintech-databases
+spec:
+  instances: 3
+
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+
+  storage:
+    size: 2Gi
+    storageClass: longhorn-database-sc
+    
+  bootstrap:
+    initdb:
+      database: fintech_prod
+      owner: fintech_admin
+      secret:
+        name: postgres-app-user
+
+  backup:
+    retentionPolicy: "5d"
+    barmanObjectStore:
+      destinationPath: "s3://fintech-cnpg-backups/"
+      endpointURL: "http://192.168.225.30:9000"
+      s3Credentials:
+        accessKeyId:
+          name: minio-backup-secret
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: minio-backup-secret
+          key: ACCESS_SECRET_KEY
+      wal:
+        compression: gzip
+        maxParallel: 2 
+
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "512Mi"
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: "kubernetes.io/hostname"
+    podAntiAffinityType: required

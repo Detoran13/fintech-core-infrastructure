@@ -1,0 +1,81 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-schema-init
+  namespace: fintech-apps
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: db-schema-init
+    spec:
+      restartPolicy: OnFailure
+      
+      containers:
+      - name: schema-initializer
+        image: ghcr.io/cloudnative-pg/postgresql:16.4
+        
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+
+        env:
+          - name: PGHOST
+            valueFrom:
+              configMapKeyRef:
+                name: fintech-apps-config
+                key: DB_HOST
+          - name: PGPORT
+            valueFrom:
+              configMapKeyRef:
+                name: fintech-apps-config
+                key: DB_PORT
+          - name: PGDATABASE
+            valueFrom:
+              configMapKeyRef:
+                name: fintech-apps-config
+                key: DB_NAME
+
+          - name: PGUSER
+            valueFrom:
+              secretKeyRef:
+                name: fintech-db-secret
+                key: db-user
+          - name: PGPASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: fintech-db-secret
+                key: db-password
+
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            echo "Waiting for database to be reachable..."
+            until pg_isready -h $PGHOST -p $PGPORT -U $PGUSER; do
+              echo "Database not ready yet, sleeping 2s..."
+              sleep 2
+            done
+
+            echo "Executing DDL schema creation..."
+            psql -v ON_ERROR_STOP=1 << 'EOF'
+            CREATE TABLE IF NOT EXISTS transactions (
+                id BIGSERIAL PRIMARY KEY,
+                transaction_id VARCHAR(64) UNIQUE NOT NULL,
+                from_account VARCHAR(32) NOT NULL,
+                to_account VARCHAR(32) NOT NULL,
+                amount NUMERIC(12, 2) NOT NULL,
+                currency VARCHAR(3) NOT NULL DEFAULT 'USD',
+                status VARCHAR(16) NOT NULL DEFAULT 'PROCESSED',
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions (created_at);
+            \dt
+            EOF
+            echo "Schema initialization completed successfully!"
+            

@@ -1,0 +1,206 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-source
+  namespace: fintech-apps
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>FinTech Core Bank | Портал Транзакций</title>
+      <style>
+        :root {
+          --bg-color: #0d0d0d;
+          --card-bg: #181818;
+          --card-border: #2a2a2a;
+          --primary-red: #E50914;
+          --primary-red-hover: #b80710;
+          --text-main: #FFFFFF;
+          --text-muted: #8c8c8c;
+          --accent-green: #46d369;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Roboto, sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-main); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .bank-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; width: 100%; max-width: 480px; padding: 32px; box-shadow: 0 20px 40px rgba(0,0,0,0.8), 0 0 20px rgba(229, 9, 20, 0.15); }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; border-bottom: 1px solid var(--card-border); padding-bottom: 16px; }
+        .logo { font-size: 22px; font-weight: 800; letter-spacing: 1px; color: var(--text-main); }
+        .logo span { color: var(--primary-red); }
+        .badge { background: rgba(229,9,20,0.15); color: var(--primary-red); padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; border: 1px solid var(--primary-red); }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-size: 13px; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        input, select { width: 100%; background: #222; border: 1px solid var(--card-border); color: #fff; padding: 14px 16px; border-radius: 8px; font-size: 15px; outline: none; transition: 0.2s; }
+        input:focus, select:focus { border-color: var(--primary-red); box-shadow: 0 0 8px rgba(229,9,20,0.4); }
+        .input-row { display: flex; gap: 12px; }
+        .input-row input { flex: 2; }
+        .input-row select { flex: 1; }
+        button { width: 100%; background: var(--primary-red); color: #fff; border: none; padding: 16px; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; transition: 0.2s; margin-top: 10px; box-shadow: 0 4px 15px rgba(229,9,20,0.4); }
+        button:hover { background: var(--primary-red-hover); box-shadow: 0 6px 20px rgba(229,9,20,0.6); transform: translateY(-1px); }
+        button:disabled { background: #444; cursor: not-allowed; box-shadow: none; transform: none; }
+        .status-box { margin-top: 24px; padding: 16px; border-radius: 8px; background: #222; border: 1px solid var(--card-border); font-size: 13px; display: none; line-height: 1.5; }
+        .status-success { border-color: var(--accent-green); background: rgba(70, 211, 105, 0.1); color: var(--accent-green); display: block; }
+        .status-error { border-color: var(--primary-red); background: rgba(229, 9, 20, 0.1); color: var(--primary-red); display: block; }
+        .pipeline-info { margin-top: 24px; font-size: 11px; color: var(--text-muted); text-align: center; border-top: 1px solid var(--card-border); padding-top: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="bank-card">
+        <div class="header">
+          <div class="logo">FINTECH<span>CORE</span></div>
+          <div class="badge">K8s HA Cluster</div>
+        </div>
+
+        <form id="txForm">
+          <div class="form-group">
+            <label>Счет отправителя (From)</label>
+            <input type="text" id="from_account" value="ACC-PREMIUM-001" required>
+          </div>
+
+          <div class="form-group">
+            <label>Счет получателя (To)</label>
+            <input type="text" id="to_account" value="ACC-SAVINGS-777" required>
+          </div>
+
+          <div class="form-group">
+            <label>Сумма и валюта</label>
+            <div class="input-row">
+              <input type="number" id="amount" value="500.00" step="0.01" min="0.01" required>
+              <select id="currency">
+                <option value="USD">USD ($)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="RUB">RUB (₽)</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" id="btnSubmit">⚡ Отправить транзакцию</button>
+        </form>
+
+        <div id="statusBox" class="status-box"></div>
+
+        <div class="pipeline-info">
+          Поток данных: VIP .26 ➔ Ingress ➔ Kafka KRaft ➔ PostgreSQL ➔ Longhorn SDS
+        </div>
+      </div>
+
+      <script>
+        document.getElementById('txForm').addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const btn = document.getElementById('btnSubmit');
+          const box = document.getElementById('statusBox');
+          
+          btn.disabled = true;
+          btn.innerText = 'Обработка через VIP...';
+          box.className = 'status-box';
+          box.style.display = 'none';
+
+          const txId = 'tx-' + Math.random().toString(36).substring(2, 9) + '-' + Date.now().toString().slice(-4);
+          const payload = {
+            transaction_id: txId,
+            from_account: document.getElementById('from_account').value,
+            to_account: document.getElementById('to_account').value,
+            amount: parseFloat(document.getElementById('amount').value),
+            currency: document.getElementById('currency').value
+          };
+
+          try {
+            const res = await fetch('/transfer', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+            if (res.status === 202 || res.ok) {
+              box.className = 'status-box status-success';
+              box.innerHTML = `<strong>✔ Успешно принято в обработку!</strong><br>ID транзакции: <code>${txId}</code><br>Сумма: ${payload.amount} ${payload.currency}<br>Статус: <b>QUEUED (Отправлено в Kafka)</b>`;
+            } else {
+              throw new Error(data.message || 'Ошибка сервера');
+            }
+          } catch (err) {
+            box.className = 'status-box status-error';
+            box.innerHTML = `<strong>✖ Ошибка отправки:</strong> ${err.message}`;
+          } finally {
+            btn.disabled = false;
+            btn.innerText = '⚡ Отправить транзакцию';
+          }
+        });
+      </script>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fintech-frontend
+  namespace: fintech-apps
+  labels:
+    app: fintech-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fintech-frontend
+  template:
+    metadata:
+      labels:
+        app: fintech-frontend
+    spec:
+      containers:
+      - name: web
+        image: nginx:alpine
+        ports:
+          - containerPort: 80
+            name: http
+        resources:
+          limits: { cpu: 100m, memory: 128Mi }
+          requests: { cpu: 50m, memory: 64Mi }
+        volumeMounts:
+          - name: html
+            mountPath: /usr/share/nginx/html
+      volumes:
+        - name: html
+          configMap:
+            name: frontend-source
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fintech-frontend
+  namespace: fintech-apps
+spec:
+  selector:
+    app: fintech-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fintech-unified-ingress
+  namespace: fintech-apps
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+  - host: fintech.local # Наш главный домен
+    http:
+      paths:
+      - path: /transfer
+        pathType: Prefix
+        backend:
+          service:
+            name: fintech-producer
+            port:
+              number: 8080
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: fintech-frontend
+            port:
+              number: 80
+              
