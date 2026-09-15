@@ -90,7 +90,7 @@ data:
           e.preventDefault();
           const btn = document.getElementById('btnSubmit');
           const box = document.getElementById('statusBox');
-          
+
           btn.disabled = true;
           btn.innerText = 'Обработка через VIP...';
           box.className = 'status-box';
@@ -148,6 +148,13 @@ spec:
       labels:
         app: fintech-frontend
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
       containers:
       - name: web
         image: nginx:alpine
@@ -186,7 +193,7 @@ metadata:
     kubernetes.io/ingress.class: "nginx"
 spec:
   rules:
-  - host: fintech.local # Наш главный домен
+  - host: fintech.local
     http:
       paths:
       - path: /transfer

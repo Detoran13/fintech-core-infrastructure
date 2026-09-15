@@ -5,9 +5,9 @@ metadata:
   namespace: fintech-apps
 spec:
   schedule: "*/15 * * * *"
-  
+
   concurrencyPolicy: Forbid
-  
+
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
 
@@ -18,12 +18,19 @@ spec:
           labels:
             app: fintech-db-cleaner
         spec:
-          restartPolicy: OnFailure 
-          
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: node-role.kubernetes.io/control-plane
+                        operator: DoesNotExist
+          restartPolicy: OnFailure
+
           containers:
           - name: cleaner
             image: ghcr.io/cloudnative-pg/postgresql:16.4
-            
+
             resources:
               limits:
                 cpu: 100m
@@ -63,14 +70,14 @@ spec:
             args:
               - |
                 echo "[CLEANER START] Running automated data retention cleanup..."
-                
+
                 DELETED_ROWS=$(psql -v ON_ERROR_STOP=1 -t -A -c "
                   WITH deleted AS (
-                    DELETE FROM transactions 
-                    WHERE created_at < NOW() - INTERVAL '30 minutes' 
+                    DELETE FROM transactions
+                    WHERE created_at < NOW() - INTERVAL '30 minutes'
                     RETURNING *
                   ) SELECT count(*) FROM deleted;
                 ")
-                
+
                 echo "[CLEANER SUCCESS] Purged $DELETED_ROWS old transaction rows from database."
                 
