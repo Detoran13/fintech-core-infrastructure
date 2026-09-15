@@ -15,6 +15,9 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["*"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "delete", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -27,5 +30,31 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: strimzi-super-operator-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: strimzi-cluster-operator-watched
+subjects:
+- kind: ServiceAccount
+  name: strimzi-cluster-operator
+  namespace: strimzi-operator
+roleRef:
+  kind: ClusterRole
+  name: strimzi-cluster-operator-watched
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: strimzi-cluster-operator-namespaced
+subjects:
+- kind: ServiceAccount
+  name: strimzi-cluster-operator
+  namespace: strimzi-operator
+roleRef:
+  kind: ClusterRole
+  name: strimzi-cluster-operator-namespaced
   apiGroup: rbac.authorization.k8s.io
   
