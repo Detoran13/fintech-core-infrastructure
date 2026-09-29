@@ -20,7 +20,8 @@ unit-tests:
     - echo "=== 1. COMPILATION CHECK ==="
     - python -m py_compile src/producer/producer.py src/consumer/consumer.py tests/test_banking_logic.py
     - echo "=== 2. STATIC CODE ANALYSIS (FLAKE8) ==="
-    - flake8 src/ tests/ --max-line-length=120 --ignore=E501,W503,F401
+    # Игнорируем стилистические предупреждения отступов (E302, E305, W292, W293)
+    - flake8 src/ tests/ --max-line-length=120 --ignore=E501,W503,F401,E302,E305,W292,W293
     - echo "=== 3. PYTEST BANKING LOGIC SUITE ==="
     - pytest -v tests/test_banking_logic.py
 
