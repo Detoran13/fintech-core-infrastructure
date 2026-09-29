@@ -1,0 +1,58 @@
+stages:
+  - test
+  - build
+  - security_scan
+
+variables:
+  PRODUCER_IMAGE: "$CI_REGISTRY_IMAGE/producer"
+  CONSUMER_IMAGE: "$CI_REGISTRY_IMAGE/consumer"
+  IMAGE_TAG: "$CI_COMMIT_SHORT_SHA"
+
+unit-tests:
+  stage: test
+  image: python:3.11-slim
+  tags:
+    - baremetal-ci
+    - docker
+  before_script:
+    - pip install --no-cache-dir flake8 pytest
+  script:
+    - echo "=== 1. COMPILATION CHECK ==="
+    - python -m py_compile src/producer/producer.py src/consumer/consumer.py tests/test_banking_logic.py
+    - echo "=== 2. STATIC CODE ANALYSIS (FLAKE8) ==="
+    - flake8 src/ tests/ --max-line-length=120 --ignore=E501,W503,F401
+    - echo "=== 3. PYTEST BANKING LOGIC SUITE ==="
+    - pytest -v tests/test_banking_logic.py
+
+build-and-push:
+  stage: build
+  image: docker:26.1-cli
+  tags:
+    - baremetal-ci
+    - docker
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - echo "=== BUILDING PRODUCER IMAGE ==="
+    - docker build -t "${PRODUCER_IMAGE}:${IMAGE_TAG}" -t "${PRODUCER_IMAGE}:latest" src/producer/
+    - echo "=== BUILDING CONSUMER IMAGE ==="
+    - docker build -t "${CONSUMER_IMAGE}:${IMAGE_TAG}" -t "${CONSUMER_IMAGE}:latest" src/consumer/
+    - echo "=== PUSHING IMAGES TO REGISTRY ==="
+    - docker push "${PRODUCER_IMAGE}:${IMAGE_TAG}"
+    - docker push "${PRODUCER_IMAGE}:latest"
+    - docker push "${CONSUMER_IMAGE}:${IMAGE_TAG}"
+    - docker push "${CONSUMER_IMAGE}:latest"
+
+security-scan-trivy:
+  stage: security_scan
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  tags:
+    - baremetal-ci
+    - docker
+  script:
+    - echo "=== SCANNING PRODUCER FOR VULNERABILITIES ==="
+    - trivy image --exit-code 0 --severity HIGH,CRITICAL --format table "${PRODUCER_IMAGE}:${IMAGE_TAG}"
+    - echo "=== SCANNING CONSUMER FOR VULNERABILITIES ==="
+    - trivy image --exit-code 0 --severity HIGH,CRITICAL --format table "${CONSUMER_IMAGE}:${IMAGE_TAG}"
