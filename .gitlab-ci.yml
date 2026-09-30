@@ -45,7 +45,7 @@ build-and-push:
     - docker push "${CONSUMER_IMAGE}:${IMAGE_TAG}"
     - docker push "${CONSUMER_IMAGE}:latest"
 
-# 3. СТАДИЯ СКАНИРОВАНИЯ БЕЗОПАСНОСТИ (DEVSECOPS TRIVY)
+# 3. СТАДИЯ СКАНЕРА БЕЗОПАСНОСТИ (DEVSECOPS TRIVY)
 security-scan-trivy:
   stage: security_scan
   image:
@@ -60,7 +60,7 @@ security-scan-trivy:
     - echo "=== SCANNING CONSUMER ==="
     - trivy image --exit-code 0 --severity HIGH,CRITICAL --format table "${CONSUMER_IMAGE}:${IMAGE_TAG}"
 
-# 4. СТАДИЯ АВТОМАТИЧЕСКОГО ПРОМОУШЕНА В GITOPS
+# 4. СТАДИЯ АВТОМАТИЧЕСКОГО ПРОМОУШЕНА В GITOPS (ЧЕРЕЗ ORIGIN)
 promote-gitops:
   stage: promote_gitops
   image:
@@ -73,12 +73,13 @@ promote-gitops:
     echo "=== PROMOTING IMAGE TAGS TO GITOPS MANIFESTS ==="
     git config --global user.name "GitLab CI Bot"
     git config --global user.email "ci-bot@fintech.local"
-    git remote set-url gitlab https://oauth2:${GITLAB_PUSH_TOKEN}@gitlab.com/detoran13/fintech-core-infrastructure.git
-    git fetch gitlab main
+    # Внедрение токена в дефолтный ремоут origin
+    git remote set-url origin https://oauth2:${GITLAB_PUSH_TOKEN}@gitlab.com/detoran13/fintech-core-infrastructure.git
+    git fetch origin main
     git checkout main
     sed -i 's|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/producer:.*|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/producer:'"${CI_COMMIT_SHORT_SHA}"'|g' 05-apps/03-fintech-producer.yaml
     sed -i 's|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/consumer:.*|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/consumer:'"${CI_COMMIT_SHORT_SHA}"'|g' 05-apps/04-fintech-consumer.yaml
     git add 05-apps/03-fintech-producer.yaml 05-apps/04-fintech-consumer.yaml
     git diff --staged
     git commit -m "ci(deploy): promote image tag ${CI_COMMIT_SHORT_SHA} to production [skip ci]" || echo "No changes to commit"
-    git push gitlab main
+    git push origin main
