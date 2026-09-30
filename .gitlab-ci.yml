@@ -9,6 +9,7 @@ variables:
   CONSUMER_IMAGE: "$CI_REGISTRY_IMAGE/consumer"
   IMAGE_TAG: "$CI_COMMIT_SHORT_SHA"
 
+# 1. СТАДИЯ ТЕСТИРОВАНИЯ (QUALITY GATE)
 unit-tests:
   stage: test
   image: python:3.11-slim
@@ -25,6 +26,7 @@ unit-tests:
     - echo "=== 3. PYTEST BANKING LOGIC SUITE ==="
     - pytest -v tests/test_banking_logic.py
 
+# 2. СТАДИЯ СБОРКИ И ПУША ОБРАЗОВ (DOCKER-OUT-OF-DOCKER)
 build-and-push:
   stage: build
   image: docker:26.1-cli
@@ -43,6 +45,7 @@ build-and-push:
     - docker push "${CONSUMER_IMAGE}:${IMAGE_TAG}"
     - docker push "${CONSUMER_IMAGE}:latest"
 
+# 3. СТАДИЯ СКАНИРОВАНИЯ БЕЗОПАСНОСТИ (DEVSECOPS TRIVY)
 security-scan-trivy:
   stage: security_scan
   image:
@@ -57,9 +60,12 @@ security-scan-trivy:
     - echo "=== SCANNING CONSUMER ==="
     - trivy image --exit-code 0 --severity HIGH,CRITICAL --format table "${CONSUMER_IMAGE}:${IMAGE_TAG}"
 
+# 4. СТАДИЯ АВТОМАТИЧЕСКОГО ПРОМОУШЕНА В GITOPS
 promote-gitops:
   stage: promote_gitops
-  image: alpine/git:latest
+  image:
+    name: alpine/git:latest
+    entrypoint: [""]
   tags:
     - baremetal-ci
     - docker
