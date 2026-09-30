@@ -63,17 +63,16 @@ promote-gitops:
   tags:
     - baremetal-ci
     - docker
-  script:
-    - echo "=== PROMOTING IMAGE TAGS TO GITOPS MANIFESTS ==="
-    - git config --global user.name "GitLab CI Bot"
-    - git config --global user.email "ci-bot@fintech.local"
-    - git remote set-url gitlab https://oauth2:${GITLAB_PUSH_TOKEN}@gitlab.com/detoran13/fintech-core-infrastructure.git
-    - git fetch gitlab main
-    - git checkout main
-    - sed -i 's|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/producer:.*|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/producer:'"${CI_COMMIT_SHORT_SHA}"'|g' 05-apps/03-fintech-producer.yaml
-    - sed -i 's|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/consumer:.*|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/consumer:'"${CI_COMMIT_SHORT_SHA}"'|g' 05-apps/04-fintech-consumer.yaml
-    - git add 05-apps/03-fintech-producer.yaml 05-apps/04-fintech-consumer.yaml
-    - git diff --staged
-    - git commit -m "ci(deploy): promote image tag ${CI_COMMIT_SHORT_SHA} to production [skip ci]" || echo "No changes to commit"
-    - git push gitlab main
-    
+  script: |
+    echo "=== PROMOTING IMAGE TAGS TO GITOPS MANIFESTS ==="
+    git config --global user.name "GitLab CI Bot"
+    git config --global user.email "ci-bot@fintech.local"
+    git remote set-url gitlab https://oauth2:${GITLAB_PUSH_TOKEN}@gitlab.com/detoran13/fintech-core-infrastructure.git
+    git fetch gitlab main
+    git checkout main
+    sed -i 's|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/producer:.*|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/producer:'"${CI_COMMIT_SHORT_SHA}"'|g' 05-apps/03-fintech-producer.yaml
+    sed -i 's|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/consumer:.*|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/consumer:'"${CI_COMMIT_SHORT_SHA}"'|g' 05-apps/04-fintech-consumer.yaml
+    git add 05-apps/03-fintech-producer.yaml 05-apps/04-fintech-consumer.yaml
+    git diff --staged
+    git commit -m "ci(deploy): promote image tag ${CI_COMMIT_SHORT_SHA} to production [skip ci]" || echo "No changes to commit"
+    git push gitlab main
