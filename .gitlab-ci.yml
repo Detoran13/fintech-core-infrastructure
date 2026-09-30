@@ -1,15 +1,19 @@
+# ==============================================================================
+# ENTERPRISE CI/CD PIPELINE: FINTECH CORE PLATFORM
+# Production Approach: Zero-Trust Security (CI builds & scans, GitOps deploys)
+# ==============================================================================
+
 stages:
   - test
   - build
   - security_scan
-  - promote_gitops
 
 variables:
   PRODUCER_IMAGE: "$CI_REGISTRY_IMAGE/producer"
   CONSUMER_IMAGE: "$CI_REGISTRY_IMAGE/consumer"
   IMAGE_TAG: "$CI_COMMIT_SHORT_SHA"
 
-# 1. СТАДИЯ ТЕСТИРОВАНИЯ (QUALITY GATE)
+# 1. QUALITY GATE (Модульные тесты и статический анализ)
 unit-tests:
   stage: test
   image: python:3.11-slim
@@ -26,7 +30,7 @@ unit-tests:
     - echo "=== 3. PYTEST BANKING LOGIC SUITE ==="
     - pytest -v tests/test_banking_logic.py
 
-# 2. СТАДИЯ СБОРКИ И ПУША ОБРАЗОВ (DOCKER-OUT-OF-DOCKER)
+# 2. CONTAINERIZATION & OCI REGISTRY PUSH (Docker-out-of-Docker)
 build-and-push:
   stage: build
   image: docker:26.1-cli
@@ -45,7 +49,7 @@ build-and-push:
     - docker push "${CONSUMER_IMAGE}:${IMAGE_TAG}"
     - docker push "${CONSUMER_IMAGE}:latest"
 
-# 3. СТАДИЯ СКАНЕРА БЕЗОПАСНОСТИ (DEVSECOPS TRIVY)
+# 3. DEVSECOPS VULNERABILITY SCANNING (Trivy)
 security-scan-trivy:
   stage: security_scan
   image:
@@ -55,31 +59,7 @@ security-scan-trivy:
     - baremetal-ci
     - docker
   script:
-    - echo "=== SCANNING PRODUCER ==="
+    - echo "=== SCANNING PRODUCER IMAGE ==="
     - trivy image --exit-code 0 --severity HIGH,CRITICAL --format table "${PRODUCER_IMAGE}:${IMAGE_TAG}"
-    - echo "=== SCANNING CONSUMER ==="
+    - echo "=== SCANNING CONSUMER IMAGE ==="
     - trivy image --exit-code 0 --severity HIGH,CRITICAL --format table "${CONSUMER_IMAGE}:${IMAGE_TAG}"
-
-# 4. СТАДИЯ АВТОМАТИЧЕСКОГО ПРОМОУШЕНА В GITOPS (ЧЕРЕЗ ORIGIN)
-promote-gitops:
-  stage: promote_gitops
-  image:
-    name: alpine/git:latest
-    entrypoint: [""]
-  tags:
-    - baremetal-ci
-    - docker
-  script: |
-    echo "=== PROMOTING IMAGE TAGS TO GITOPS MANIFESTS ==="
-    git config --global user.name "GitLab CI Bot"
-    git config --global user.email "ci-bot@fintech.local"
-    # Внедрение токена в дефолтный ремоут origin
-    git remote set-url origin https://oauth2:${GITLAB_PUSH_TOKEN}@gitlab.com/detoran13/fintech-core-infrastructure.git
-    git fetch origin main
-    git checkout main
-    sed -i 's|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/producer:.*|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/producer:'"${CI_COMMIT_SHORT_SHA}"'|g' 05-apps/03-fintech-producer.yaml
-    sed -i 's|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/consumer:.*|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/consumer:'"${CI_COMMIT_SHORT_SHA}"'|g' 05-apps/04-fintech-consumer.yaml
-    git add 05-apps/03-fintech-producer.yaml 05-apps/04-fintech-consumer.yaml
-    git diff --staged
-    git commit -m "ci(deploy): promote image tag ${CI_COMMIT_SHORT_SHA} to production [skip ci]" || echo "No changes to commit"
-    git push origin main
