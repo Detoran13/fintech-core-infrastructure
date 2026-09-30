@@ -2,6 +2,7 @@ stages:
   - test
   - build
   - security_scan
+  - promote_gitops
 
 variables:
   PRODUCER_IMAGE: "$CI_REGISTRY_IMAGE/producer"
@@ -20,7 +21,6 @@ unit-tests:
     - echo "=== 1. COMPILATION CHECK ==="
     - python -m py_compile src/producer/producer.py src/consumer/consumer.py tests/test_banking_logic.py
     - echo "=== 2. STATIC CODE ANALYSIS (FLAKE8) ==="
-    # Игнорируем стилистические предупреждения отступов (E302, E305, W292, W293)
     - flake8 src/ tests/ --max-line-length=120 --ignore=E501,W503,F401,E302,E305,W292,W293
     - echo "=== 3. PYTEST BANKING LOGIC SUITE ==="
     - pytest -v tests/test_banking_logic.py
@@ -34,13 +34,12 @@ build-and-push:
   before_script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
   script:
-    - echo "=== BUILDING PRODUCER IMAGE ==="
+    - echo "=== BUILDING & PUSHING PRODUCER ==="
     - docker build -t "${PRODUCER_IMAGE}:${IMAGE_TAG}" -t "${PRODUCER_IMAGE}:latest" src/producer/
-    - echo "=== BUILDING CONSUMER IMAGE ==="
-    - docker build -t "${CONSUMER_IMAGE}:${IMAGE_TAG}" -t "${CONSUMER_IMAGE}:latest" src/consumer/
-    - echo "=== PUSHING IMAGES TO REGISTRY ==="
     - docker push "${PRODUCER_IMAGE}:${IMAGE_TAG}"
     - docker push "${PRODUCER_IMAGE}:latest"
+    - echo "=== BUILDING & PUSHING CONSUMER ==="
+    - docker build -t "${CONSUMER_IMAGE}:${IMAGE_TAG}" -t "${CONSUMER_IMAGE}:latest" src/consumer/
     - docker push "${CONSUMER_IMAGE}:${IMAGE_TAG}"
     - docker push "${CONSUMER_IMAGE}:latest"
 
@@ -53,7 +52,28 @@ security-scan-trivy:
     - baremetal-ci
     - docker
   script:
-    - echo "=== SCANNING PRODUCER FOR VULNERABILITIES ==="
+    - echo "=== SCANNING PRODUCER ==="
     - trivy image --exit-code 0 --severity HIGH,CRITICAL --format table "${PRODUCER_IMAGE}:${IMAGE_TAG}"
-    - echo "=== SCANNING CONSUMER FOR VULNERABILITIES ==="
+    - echo "=== SCANNING CONSUMER ==="
     - trivy image --exit-code 0 --severity HIGH,CRITICAL --format table "${CONSUMER_IMAGE}:${IMAGE_TAG}"
+
+promote-gitops:
+  stage: promote_gitops
+  image: alpine/git:latest
+  tags:
+    - baremetal-ci
+    - docker
+  script:
+    - echo "=== PROMOTING IMAGE TAGS TO GITOPS MANIFESTS ==="
+    - git config --global user.name "GitLab CI Bot"
+    - git config --global user.email "ci-bot@fintech.local"
+    - git remote set-url gitlab https://oauth2:${GITLAB_PUSH_TOKEN}@gitlab.com/detoran13/fintech-core-infrastructure.git
+    - git fetch gitlab main
+    - git checkout main
+    - sed -i 's|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/producer:.*|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/producer:'"${CI_COMMIT_SHORT_SHA}"'|g' 05-apps/03-fintech-producer.yaml
+    - sed -i 's|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/consumer:.*|image: registry.gitlab.com/detoran13/fintech-core-infrastructure/consumer:'"${CI_COMMIT_SHORT_SHA}"'|g' 05-apps/04-fintech-consumer.yaml
+    - git add 05-apps/03-fintech-producer.yaml 05-apps/04-fintech-consumer.yaml
+    - git diff --staged
+    - git commit -m "ci(deploy): promote image tag ${CI_COMMIT_SHORT_SHA} to production [skip ci]" || echo "No changes to commit"
+    - git push gitlab main
+    
