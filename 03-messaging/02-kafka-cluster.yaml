@@ -15,6 +15,16 @@ spec:
         port: 9092
         type: internal
         tls: false
+        # Белый список: разрешаем доступ к порту 9092 строго Producer и Consumer из fintech-apps
+        networkPolicyPeers:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: fintech-apps
+            podSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values: ["fintech-producer", "fintech-consumer"]
       - name: tls
         port: 9093
         type: internal
