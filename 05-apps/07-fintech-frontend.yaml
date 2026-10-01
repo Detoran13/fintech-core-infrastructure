@@ -75,7 +75,7 @@ data:
             </div>
           </div>
 
-          <button type="submit" id="btnSubmit">⚡ Отправить транзакцию</button>
+          <button type="submit" id="btnSubmit">⚡ Отправить платеж (v2)</button>
         </form>
 
         <div id="statusBox" class="status-box"></div>
