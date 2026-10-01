@@ -1,0 +1,56 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-isolation
+  namespace: fintech-apps
+spec:
+  podSelector:
+    matchLabels:
+      app: fintech-frontend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: producer-isolation
+  namespace: fintech-apps
+spec:
+  podSelector:
+    matchLabels:
+      app: fintech-producer
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: consumer-isolation
+  namespace: fintech-apps
+spec:
+  podSelector:
+    matchLabels:
+      app: fintech-consumer
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8081
+          
